@@ -1,7 +1,6 @@
-
 const db = require("../config/database");
 
-const create = (nombre, correo, password) => {
+const create = ({ nombre, correo, password }) => {
   return new Promise((resolve, reject) => {
     const sql = `
       INSERT INTO usuarios (nombre, correo, password)
@@ -16,9 +15,13 @@ const create = (nombre, correo, password) => {
 };
 
 
-const searchEmail = (correo) => {
+const findByEmail = (correo) => {
   return new Promise((resolve, reject) => {
-    const sql = "SELECT * FROM usuarios WHERE correo = ?";
+    const sql = `
+      SELECT id, nombre, correo, password, puntos
+      FROM usuarios
+      WHERE correo = ?
+    `;
 
     db.get(sql, [correo], (err, user) => {
       if (err) return reject(err);
@@ -28,7 +31,7 @@ const searchEmail = (correo) => {
 };
 
 
-const searchId = (id) => {
+const findById = (id) => {
   return new Promise((resolve, reject) => {
     const sql = `
       SELECT id, nombre, correo, puntos
@@ -45,6 +48,6 @@ const searchId = (id) => {
 
 module.exports = {
   create,
-  searchEmail,
-  searchId,
+  findByEmail,
+  findById,
 };

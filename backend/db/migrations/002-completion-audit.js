@@ -1,4 +1,17 @@
 async function up(db) {
+  const orphanedCompletion = await db.getAsync(`
+    SELECT c.id, c.actividad_id
+    FROM actividad_cumplimientos c
+    LEFT JOIN actividades a ON a.id = c.actividad_id
+    WHERE a.id IS NULL
+    LIMIT 1
+  `);
+  if (orphanedCompletion) {
+    throw new Error(
+      `Cannot migrate completion audit: legacy completion ${orphanedCompletion.id} references missing activity ${orphanedCompletion.actividad_id}`,
+    );
+  }
+
   await db.runAsync(
     "ALTER TABLE actividades ADD COLUMN asignado_usuario_id INTEGER REFERENCES usuarios(id)",
   );

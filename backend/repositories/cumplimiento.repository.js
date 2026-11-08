@@ -9,11 +9,11 @@ const registrarCumplimiento = (actividadId, usuarioId, fecha) => {
 
         const sql = `
           INSERT INTO actividad_cumplimientos
-          (actividad_id, fecha, puntos)
-          VALUES (?, ?, 10)
+          (actividad_id, actor_usuario_id, fecha, puntos)
+          VALUES (?, ?, ?, 10)
         `;
 
-        db.run(sql, [actividadId, fecha], function (err) {
+        db.run(sql, [actividadId, usuarioId, fecha], function (err) {
           if (err) return rollback(err);
 
           db.run(

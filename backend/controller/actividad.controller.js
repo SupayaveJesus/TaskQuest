@@ -1,140 +1,198 @@
 const actividadRepository = require("../repositories/actividad.repository");
+const { ApiError } = require("../middleware/error.middleware");
 
-// Crear actividad
-const createActivity = async (req, res) => {
+const ALLOWED_FREQUENCIES = ["diaria", "semanal"];
+
+const parseActivityId = (value) => {
+  const activityId = Number(value);
+
+  if (!Number.isInteger(activityId) || activityId <= 0) {
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      "El identificador de actividad no es válido",
+    );
+  }
+
+  return activityId;
+};
+
+const normalizeActivity = ({
+  titulo,
+  descripcion,
+  recurrente,
+  frecuencia,
+  fecha,
+}) => ({
+  titulo: typeof titulo === "string" ? titulo.trim() : titulo,
+  descripcion: descripcion ?? null,
+  recurrente: recurrente ?? 0,
+  frecuencia: frecuencia ?? null,
+  fecha: fecha ?? null,
+});
+
+const validateActivity = (actividad) => {
+  if (typeof actividad.titulo !== "string" || !actividad.titulo) {
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      "El título es obligatorio",
+    );
+  }
+
+  if (![0, 1].includes(actividad.recurrente)) {
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      "El campo recurrente debe ser 0 o 1",
+    );
+  }
+
+  if (
+    actividad.recurrente === 1 &&
+    !ALLOWED_FREQUENCIES.includes(actividad.frecuencia)
+  ) {
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      "Una actividad recurrente debe tener frecuencia diaria o semanal",
+    );
+  }
+
+  if (actividad.recurrente === 0 && actividad.frecuencia !== null) {
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      "Una actividad no recurrente no debe tener frecuencia",
+    );
+  }
+
+  if (
+    actividad.descripcion !== null &&
+    typeof actividad.descripcion !== "string"
+  ) {
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      "La descripción debe ser texto",
+    );
+  }
+
+  if (actividad.fecha !== null && typeof actividad.fecha !== "string") {
+    throw new ApiError(
+      400,
+      "VALIDATION_ERROR",
+      "La fecha debe ser texto",
+    );
+  }
+};
+
+const createActivity = async (req, res, next) => {
   try {
-    const { titulo, descripcion, recurrente, frecuencia, fecha, proyecto_id } =
-      req.body;
+    const actividad = normalizeActivity(req.body ?? {});
 
-    if (typeof titulo !== "string" || !titulo.trim()) {
-      return res.status(400).json({
-        mensaje: "El título es obligatorio",
-      });
-    }
-
-    const userId = req.user.id;
+    validateActivity(actividad);
 
     const activityId = await actividadRepository.create({
-      titulo: titulo.trim(),
-      descripcion,
-      recurrente,
-      frecuencia,
-      fecha,
-      usuario_id: userId,
-      proyecto_id,
+      ...actividad,
+      usuario_id: req.user.id,
+      proyecto_id: req.body?.proyecto_id ?? null,
     });
+
+    const createdActivity = await actividadRepository.findById(
+      activityId,
+      req.user.id,
+    );
 
     return res.status(201).json({
       mensaje: "Actividad creada correctamente",
-      actividad: await actividadRepository.findById(activityId, userId),
+      actividad: createdActivity,
     });
   } catch (error) {
-    console.error("Error al crear actividad:", error);
-
-    return res.status(500).json({
-      mensaje: "Error interno del servidor",
-    });
+    return next(error);
   }
 };
 
-// Listar actividades
-const getActivities = async (req, res) => {
+const getActivities = async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const actividades = await actividadRepository.findByUser(req.user.id);
 
-    const actividades = await actividadRepository.findByUser(userId);
-
-    return res.status(200).json({
-      actividades,
-    });
+    return res.status(200).json({ actividades });
   } catch (error) {
-    console.error("Error al obtener actividades:", error);
-
-    return res.status(500).json({
-      mensaje: "Error interno del servidor",
-    });
+    return next(error);
   }
 };
 
-const updateActivity = async (req, res) => {
+const updateActivity = async (req, res, next) => {
   try {
-    const activityId = req.params.id;
-    const userId = req.user.id;
+    const activityId = parseActivityId(req.params.id);
 
-    // Buscar actividad existente
-    const actividad = await actividadRepository.findById(activityId, userId);
+    const existingActivity = await actividadRepository.findById(
+      activityId,
+      req.user.id,
+    );
 
-    if (!actividad) {
-      return res.status(404).json({
-        mensaje: "Actividad no encontrada",
-      });
+    if (!existingActivity) {
+      throw new ApiError(
+        404,
+        "ACTIVITY_NOT_FOUND",
+        "Actividad no encontrada",
+      );
     }
 
-    // Obtener datos enviados
     const {
-      titulo = actividad.titulo,
-      descripcion = actividad.descripcion,
-      recurrente = actividad.recurrente,
-      frecuencia = actividad.frecuencia,
-      fecha = actividad.fecha,
-    } = req.body;
+      titulo = existingActivity.titulo,
+      descripcion = existingActivity.descripcion,
+      recurrente = existingActivity.recurrente,
+      frecuencia = existingActivity.frecuencia,
+      fecha = existingActivity.fecha,
+    } = req.body ?? {};
 
-    // Validar datos
-    if (
-      typeof titulo !== "string" ||
-      !titulo.trim() ||
-      ![0, 1].includes(recurrente) ||
-      (frecuencia !== null && !["diaria", "semanal"].includes(frecuencia))
-    ) {
-      return res.status(400).json({
-        mensaje: "Datos de actividad inválidos",
-      });
-    }
-
-    // Actualizar
-    await actividadRepository.update(activityId, userId, {
-      titulo: titulo.trim(),
+    const actividad = normalizeActivity({
+      titulo,
       descripcion,
       recurrente,
       frecuencia,
       fecha,
     });
 
+    validateActivity(actividad);
+
+    await actividadRepository.update(activityId, req.user.id, actividad);
+
+    const updatedActivity = await actividadRepository.findById(
+      activityId,
+      req.user.id,
+    );
+
     return res.status(200).json({
       mensaje: "Actividad actualizada correctamente",
-      actividad: await actividadRepository.findById(activityId, userId),
+      actividad: updatedActivity,
     });
   } catch (error) {
-    console.error("Error al actualizar actividad:", error);
-
-    return res.status(500).json({
-      mensaje: "Error interno del servidor",
-    });
+    return next(error);
   }
 };
 
-const deleteActivity = async (req, res) => {
+const deleteActivity = async (req, res, next) => {
   try {
-    const activityId = req.params.id;
-    const userId = req.user.id;
+    const activityId = parseActivityId(req.params.id);
 
-    const changes = await actividadRepository.remove(activityId, userId);
+    const changes = await actividadRepository.remove(activityId, req.user.id);
 
     if (changes === 0) {
-      return res.status(404).json({
-        mensaje: "Actividad no encontrada",
-      });
+      throw new ApiError(
+        404,
+        "ACTIVITY_NOT_FOUND",
+        "Actividad no encontrada",
+      );
     }
 
     return res.status(200).json({
       mensaje: "Actividad eliminada correctamente",
     });
   } catch (error) {
-    console.error("Error al eliminar actividad:", error);
-
-    return res.status(500).json({
-      mensaje: "Error interno del servidor",
-    });
+    return next(error);
   }
 };
 
