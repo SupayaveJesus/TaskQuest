@@ -1,4 +1,5 @@
 const actividadRepository = require("../repositories/actividad.repository");
+const cumplimientoRepository = require("../repositories/cumplimiento.repository");
 const { ApiError } = require("../middleware/error.middleware");
 
 const ALLOWED_FREQUENCIES = ["diaria", "semanal"];
@@ -196,9 +197,69 @@ const deleteActivity = async (req, res, next) => {
   }
 };
 
+const completeActivity = async (req, res, next) => {
+  try {
+    const activityId = parseActivityId(req.params.id);
+
+    const activity = await actividadRepository.findById(
+      activityId,
+      req.user.id,
+    );
+    if (!activity) {
+      throw new ApiError(
+        404,
+        "ACTIVITY_NOT_FOUND",
+        "Actividad no encontrada",
+      );
+    }
+    if (activity.recurrente === 1) {
+      throw new ApiError(
+        400,
+        "RECURRING_ACTIVITY_NOT_SUPPORTED",
+        "Las actividades recurrentes todavía no pueden completarse",
+      );
+    }
+    if (activity.estado !== "pendiente") {
+      throw new ApiError(
+        409,
+        "ACTIVITY_ALREADY_COMPLETED",
+        "La actividad ya fue completada",
+      );
+    }
+
+    const fecha = new Date().toISOString().slice(0, 10);
+    const cumplimiento = await cumplimientoRepository.registrarCumplimiento(
+      activityId,
+      req.user.id,
+      fecha,
+    );
+
+    return res.status(201).json({
+      mensaje: "Actividad completada correctamente",
+      cumplimiento,
+    });
+  } catch (error) {
+    if (
+      ["ACTIVITY_NOT_ELIGIBLE", "ACTIVITY_ALREADY_COMPLETED"].includes(
+        error.code,
+      )
+    ) {
+      return next(
+        new ApiError(
+          409,
+          "ACTIVITY_ALREADY_COMPLETED",
+          "La actividad ya fue completada",
+        ),
+      );
+    }
+    return next(error);
+  }
+};
+
 module.exports = {
   createActivity,
   getActivities,
   updateActivity,
   deleteActivity,
+  completeActivity,
 };

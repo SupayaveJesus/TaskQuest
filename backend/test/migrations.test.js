@@ -118,7 +118,7 @@ test("migration rollback restores legacy completion data after an injected post-
   assert.equal(migration, undefined);
 });
 
-test("completion repository records its caller as the required completion actor", async (t) => {
+test("completion repository records the activity owner as the completion actor", async (t) => {
   const fixture = temporaryDatabase();
   const db = createDatabase(fixture.path);
   const originalDatabasePath = process.env.DATABASE_PATH;
@@ -136,7 +136,7 @@ test("completion repository records its caller as the required completion actor"
   await migrate(db);
   await db.runAsync("INSERT INTO usuarios (id, nombre, correo, password) VALUES (1, 'Owner', 'owner@test.dev', 'hash')");
   await db.runAsync("INSERT INTO usuarios (id, nombre, correo, password) VALUES (2, 'Actor', 'actor@test.dev', 'hash')");
-  await db.runAsync("INSERT INTO actividades (id, titulo, usuario_id) VALUES (4, 'Audited', 1)");
+  await db.runAsync("INSERT INTO actividades (id, titulo, usuario_id) VALUES (4, 'Audited', 2)");
 
   process.env.DATABASE_PATH = fixture.path;
   delete require.cache[require.resolve("../repositories/cumplimiento.repository")];

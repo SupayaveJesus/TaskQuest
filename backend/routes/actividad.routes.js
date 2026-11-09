@@ -6,6 +6,7 @@ const {
   getActivities,
   updateActivity,
   deleteActivity,
+  completeActivity,
 } = require("../controller/actividad.controller");
 
 const authenticateToken = require("../middleware/auth.middleware");
@@ -18,5 +19,6 @@ router.post("/", createActivity);
 router.get("/", getActivities);
 router.put("/:id", updateActivity);
 router.delete("/:id", deleteActivity);
+router.post("/:id/cumplimientos", completeActivity);
 
 module.exports = router;
