@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const authRoutes = require("./routes/auth.routes");
 const actividadRoutes = require("./routes/actividad.routes");
+const progresoRoutes = require("./routes/progreso.routes");
+const proyectoRoutes = require("./routes/proyecto.routes");
 const { ApiError, errorHandler } = require("./middleware/error.middleware");
 
 function configuredOrigins(value = process.env.CORS_ORIGIN) {
@@ -35,6 +37,8 @@ function createApp() {
   app.get("/", (req, res) => res.json({ mensaje: "API de TaskQuest funcionando correctamente" }));
   app.use("/api/auth", authRoutes);
   app.use("/api/actividades", actividadRoutes);
+  app.use("/api/progreso", progresoRoutes);
+  app.use("/api/proyectos", proyectoRoutes);
   app.use(errorHandler);
   return app;
 }

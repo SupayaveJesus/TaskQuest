@@ -3,7 +3,9 @@ const router = express.Router();
 
 const {
   createActivity,
+  updateActivityAssignment,
   getActivities,
+  getActivity,
   updateActivity,
   deleteActivity,
   completeActivity,
@@ -17,6 +19,8 @@ router.use(authenticateToken);
 // Actividades
 router.post("/", createActivity);
 router.get("/", getActivities);
+router.get("/:id", getActivity);
+router.patch("/:id/asignacion", updateActivityAssignment);
 router.put("/:id", updateActivity);
 router.delete("/:id", deleteActivity);
 router.post("/:id/cumplimientos", completeActivity);
