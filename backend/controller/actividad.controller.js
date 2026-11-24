@@ -504,6 +504,16 @@ const completeActivity = async (req, res, next) => {
       );
     }
 
+    if (error.code === "ACTIVITY_NOT_STARTED") {
+      return next(
+        new ApiError(
+          409,
+          "ACTIVITY_NOT_STARTED",
+          "La actividad todavía no comenzó",
+        ),
+      );
+    }
+
     return next(error);
   }
 };

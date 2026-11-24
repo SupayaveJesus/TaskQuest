@@ -30,6 +30,14 @@ const parseUserId = (value) => {
   return userId;
 };
 
+const validateMemberEmail = (value) => {
+  const correo = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!correo || correo.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) {
+    throw new ApiError(400, "INVALID_MEMBER_EMAIL", "El correo electrónico no es válido");
+  }
+  return correo;
+};
+
 const validateProject = (body) => {
   const nombre = typeof body?.nombre === "string" ? body.nombre.trim() : "";
   const descripcion = body?.descripcion ?? null;
@@ -54,6 +62,7 @@ const mapOutcome = (outcome) => {
   if (outcome === "FORBIDDEN") throw new ApiError(403, "PROJECT_FORBIDDEN", "No tienes permiso para modificar este proyecto");
   if (outcome === "CONFLICT") throw new ApiError(409, "PROJECT_MEMBER_ALREADY_EXISTS", "El usuario ya pertenece al proyecto");
   if (outcome === "USER_NOT_FOUND") throw new ApiError(404, "USER_NOT_FOUND", "Usuario no encontrado");
+  if (outcome === "EMAIL_NOT_FOUND") throw new ApiError(404, "REGISTERED_EMAIL_NOT_FOUND", "No existe un usuario registrado con ese correo electrónico");
   if (outcome === "CREATOR_REQUIRED") throw new ApiError(409, "PROJECT_CREATOR_MEMBERSHIP_REQUIRED", "No se puede eliminar al creador del proyecto");
   if (outcome === "MEMBER_NOT_FOUND") throw new ApiError(404, "PROJECT_MEMBER_NOT_FOUND", "El usuario no es miembro del proyecto");
 };
@@ -152,6 +161,19 @@ const addProjectMember = async (req, res, next) => {
   }
 };
 
+const addProjectMemberByEmail = async (req, res, next) => {
+  try {
+    const projectId = parseProjectId(req.params.id);
+    const correo = validateMemberEmail(req.body?.correo);
+    const result = await proyectoRepository.addMemberByEmail(projectId, req.user.id, correo);
+    mapOutcome(result.outcome);
+
+    return res.status(201).json({ miembro: result.user });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const removeProjectMember = async (req, res, next) => {
   try {
     const projectId = parseProjectId(req.params.id);
@@ -173,5 +195,6 @@ module.exports = {
   deleteProject,
   getProjectMembers,
   addProjectMember,
+  addProjectMemberByEmail,
   removeProjectMember,
 };

@@ -289,6 +289,85 @@ test("IANA daily and Monday-week recurrent HTTP completions retry only the curre
   assert.deepEqual(await context.db.getAsync("SELECT puntos FROM usuarios WHERE id = 1"), { puntos: 20 });
 });
 
+test("future recurring activities reject server-derived daily and weekly occurrences without XP", async (t) => {
+  const context = await createTestContext();
+  t.after(() => context.close());
+  const headers = { Authorization: `Bearer ${context.tokenFor(1)}` };
+  await context.db.runAsync("INSERT INTO usuarios (id, nombre, correo, password, puntos) VALUES (1, 'Ada', 'future@test.dev', 'hash', 0)");
+  await context.db.runAsync("INSERT INTO actividades (id, titulo, estado, recurrente, frecuencia, fecha, zona_horaria, usuario_id) VALUES (1, 'Daily future', 'pendiente', 1, 'diaria', '2026-03-02', 'America/Buenos_Aires', 1), (2, 'Weekly future', 'pendiente', 1, 'semanal', '2026-03-02', 'America/Buenos_Aires', 1)");
+
+  await withFixedNow("2026-03-02T02:30:00.000Z", async () => {
+    for (const id of [1, 2]) {
+      const response = await context.request(`/api/actividades/${id}/cumplimientos`, { method: "POST", headers });
+      assert.equal(response.status, 409);
+      assert.equal((await response.json()).error.code, "ACTIVITY_NOT_STARTED");
+    }
+  });
+
+  assert.deepEqual(await context.db.getAsync("SELECT COUNT(*) AS count FROM actividad_cumplimientos"), { count: 0 });
+  assert.deepEqual(await context.db.getAsync("SELECT COUNT(*) AS count FROM actividad_ocurrencias"), { count: 0 });
+  assert.deepEqual(await context.db.getAsync("SELECT puntos FROM usuarios WHERE id = 1"), { puntos: 0 });
+});
+
+test("future one-time activities reject completion without XP", async (t) => {
+  const context = await createTestContext();
+  t.after(() => context.close());
+  const headers = { Authorization: `Bearer ${context.tokenFor(1)}` };
+  await context.db.runAsync("INSERT INTO usuarios (id, nombre, correo, password, puntos) VALUES (1, 'Ada', 'future-one-time@test.dev', 'hash', 0)");
+  await context.db.runAsync("INSERT INTO actividades (id, titulo, estado, recurrente, fecha, usuario_id) VALUES (1, 'Future one-time', 'pendiente', 0, '2026-03-03', 1)");
+
+  await withFixedNow("2026-03-02T15:00:00.000Z", async () => {
+    const response = await context.request("/api/actividades/1/cumplimientos", { method: "POST", headers });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), {
+      error: {
+        code: "ACTIVITY_NOT_STARTED",
+        message: "La actividad todavía no comenzó",
+      },
+    });
+  });
+
+  assert.deepEqual(await context.db.getAsync("SELECT estado FROM actividades WHERE id = 1"), { estado: "pendiente" });
+  assert.deepEqual(await context.db.getAsync("SELECT COUNT(*) AS count FROM actividad_cumplimientos"), { count: 0 });
+  assert.deepEqual(await context.db.getAsync("SELECT puntos FROM usuarios WHERE id = 1"), { puntos: 0 });
+});
+
+test("one-time activities can complete on their configured start date", async (t) => {
+  const context = await createTestContext();
+  t.after(() => context.close());
+  const headers = { Authorization: `Bearer ${context.tokenFor(1)}` };
+  await context.db.runAsync("INSERT INTO usuarios (id, nombre, correo, password, puntos) VALUES (1, 'Ada', 'start-one-time@test.dev', 'hash', 0)");
+  await context.db.runAsync("INSERT INTO actividades (id, titulo, estado, recurrente, fecha, usuario_id) VALUES (1, 'Start one-time', 'pendiente', 0, '2026-03-02', 1)");
+
+  await withFixedNow("2026-03-02T15:00:00.000Z", async () => {
+    const response = await context.request("/api/actividades/1/cumplimientos", { method: "POST", headers });
+    assert.equal(response.status, 201);
+    assert.equal((await response.json()).cumplimiento.fecha, "2026-03-02");
+  });
+
+  assert.deepEqual(await context.db.getAsync("SELECT estado FROM actividades WHERE id = 1"), { estado: "completada" });
+  assert.deepEqual(await context.db.getAsync("SELECT puntos FROM usuarios WHERE id = 1"), { puntos: 10 });
+});
+
+test("recurring activities allow their configured daily start and weekly start period", async (t) => {
+  const context = await createTestContext();
+  t.after(() => context.close());
+  const headers = { Authorization: `Bearer ${context.tokenFor(1)}` };
+  await context.db.runAsync("INSERT INTO usuarios (id, nombre, correo, password, puntos) VALUES (1, 'Ada', 'start@test.dev', 'hash', 0)");
+  await context.db.runAsync("INSERT INTO actividades (id, titulo, estado, recurrente, frecuencia, fecha, zona_horaria, usuario_id) VALUES (1, 'Daily start', 'pendiente', 1, 'diaria', '2026-03-02', 'America/Buenos_Aires', 1), (2, 'Weekly start', 'pendiente', 1, 'semanal', '2026-03-04', 'America/Buenos_Aires', 1)");
+
+  await withFixedNow("2026-03-02T15:00:00.000Z", async () => {
+    const daily = await context.request("/api/actividades/1/cumplimientos", { method: "POST", headers });
+    const weekly = await context.request("/api/actividades/2/cumplimientos", { method: "POST", headers });
+    assert.equal(daily.status, 201);
+    assert.equal(weekly.status, 201);
+    assert.equal((await daily.json()).cumplimiento.fecha, "2026-03-02");
+    assert.equal((await weekly.json()).cumplimiento.fecha, "2026-03-02");
+  });
+
+  assert.deepEqual(await context.db.getAsync("SELECT puntos FROM usuarios WHERE id = 1"), { puntos: 20 });
+});
+
 test("rejected protected writes return stable 400/401/403/404/409 codes without database mutations", async (t) => {
   const context = await createTestContext();
   t.after(() => context.close());

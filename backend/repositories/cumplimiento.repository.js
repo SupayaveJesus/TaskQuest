@@ -1,5 +1,5 @@
 const db = require("../config/database");
-const { currentPeriodKey } = require("../domain/recurrence-calendar");
+const { currentPeriodKey, monday } = require("../domain/recurrence-calendar");
 
 const XP_PER_COMPLETION = 10;
 
@@ -22,8 +22,7 @@ const registrarCumplimiento = async (
   recurrente = 0,
   frecuencia = null,
 ) => {
-  await db.runAsync("BEGIN IMMEDIATE");
-  try {
+  return db.withTransaction(async () => {
     const activity = await db.getAsync(
       `SELECT a.* FROM actividades a
        WHERE a.id = ? AND (
@@ -43,14 +42,30 @@ const registrarCumplimiento = async (
     if (activity.recurrente && fecha !== occurrenceDate) {
       throw repositoryError("ACTIVITY_NOT_ELIGIBLE", "Solo puede completarse la ocurrencia local actual");
     }
+    if (activity.recurrente) {
+      const startPeriod = activity.frecuencia === "semanal"
+        ? monday(activity.fecha)
+        : activity.fecha;
+
+      if (occurrenceDate < startPeriod) {
+        throw repositoryError("ACTIVITY_NOT_STARTED", "La actividad recurrente todavía no comenzó");
+      }
+    }
+    if (
+      !activity.recurrente
+      && activity.fecha !== null
+      && activity.fecha > new Date().toISOString().slice(0, 10)
+    ) {
+      throw repositoryError("ACTIVITY_NOT_STARTED", "La actividad todavía no comenzó");
+    }
     if (!activity.recurrente && activity.estado !== "pendiente") {
       const existing = await findByActivityId(actividadId, usuarioId);
-      if (existing) { await db.runAsync("COMMIT"); return { ...existing, idempotent: true }; }
+      if (existing) return { ...existing, idempotent: true };
       throw repositoryError("ACTIVITY_ALREADY_COMPLETED", "La actividad ya fue completada");
     }
 
     const existing = await findByActivityId(actividadId, usuarioId, occurrenceDate);
-    if (existing) { await db.runAsync("COMMIT"); return { ...existing, idempotent: true }; }
+    if (existing) return { ...existing, idempotent: true };
     if (activity.recurrente) {
       await db.runAsync(
         "INSERT INTO actividad_ocurrencias (actividad_id, fecha, estado) VALUES (?, ?, 'pendiente') ON CONFLICT(actividad_id, fecha) DO NOTHING",
@@ -74,12 +89,8 @@ const registrarCumplimiento = async (
     );
     await db.runAsync("UPDATE usuarios SET puntos = puntos + ? WHERE id = ?", [XP_PER_COMPLETION, usuarioId]);
     const user = await db.getAsync("SELECT puntos FROM usuarios WHERE id = ?", [usuarioId]);
-    await db.runAsync("COMMIT");
     return { actividadId, fecha: occurrenceDate, timezone: activity.recurrente ? activity.zona_horaria || "UTC" : null, puntosGanados: XP_PER_COMPLETION, puntosTotales: user.puntos, idempotent: false };
-  } catch (error) {
-    await db.runAsync("ROLLBACK").catch(() => {});
-    throw error;
-  }
+  });
 };
 
 module.exports = { findByActivityId, registrarCumplimiento };

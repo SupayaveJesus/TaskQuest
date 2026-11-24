@@ -23,13 +23,12 @@ async function migrate(db) {
     if (applied) continue;
 
     const migration = require(path.join(migrationsDirectory, name));
-    await db.runAsync("BEGIN IMMEDIATE");
     try {
-      await migration.up(db);
-      await db.runAsync("INSERT INTO schema_migrations (name) VALUES (?)", [name]);
-      await db.runAsync("COMMIT");
+      await db.withTransaction(async () => {
+        await migration.up(db);
+        await db.runAsync("INSERT INTO schema_migrations (name) VALUES (?)", [name]);
+      });
     } catch (error) {
-      await db.runAsync("ROLLBACK").catch(() => {});
       throw new Error(`Migration ${name} failed: ${error.message}`);
     }
   }

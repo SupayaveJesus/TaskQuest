@@ -1,20 +1,7 @@
 const db = require("../config/database");
 
-const withTransaction = async (work) => {
-  await db.runAsync("BEGIN IMMEDIATE");
-
-  try {
-    const result = await work();
-    await db.runAsync("COMMIT");
-    return result;
-  } catch (error) {
-    await db.runAsync("ROLLBACK").catch(() => {});
-    throw error;
-  }
-};
-
 const create = async ({ nombre, descripcion, creadorId }) => {
-  return withTransaction(async () => {
+  return db.withTransaction(async () => {
     /* La creación y la membresía del creador deben confirmarse juntas. */
     const project = await db.runAsync(
       "INSERT INTO proyectos (nombre, descripcion, creador_id) VALUES (?, ?, ?)",
@@ -75,7 +62,7 @@ const findMembersByProjectId = (projectId) => {
   );
 };
 
-const addMember = async (projectId, actorId, usuarioId) => withTransaction(async () => {
+const addMember = async (projectId, actorId, usuarioId) => db.withTransaction(async () => {
   const project = await findById(projectId);
   if (!project) return { outcome: "NOT_FOUND" };
   if (project.creador_id !== actorId) return { outcome: "FORBIDDEN" };
@@ -85,8 +72,26 @@ const addMember = async (projectId, actorId, usuarioId) => withTransaction(async
   return { outcome: result.changes ? "CREATED" : "CONFLICT" };
 });
 
+const addMemberByEmail = async (projectId, actorId, correo) => db.withTransaction(async () => {
+  const project = await findById(projectId);
+  if (!project) return { outcome: "NOT_FOUND" };
+  if (project.creador_id !== actorId) return { outcome: "FORBIDDEN" };
+
+  const user = await db.getAsync(
+    "SELECT id, nombre, correo, puntos FROM usuarios WHERE correo = ?",
+    [correo],
+  );
+  if (!user) return { outcome: "EMAIL_NOT_FOUND" };
+
+  const result = await db.runAsync(
+    "INSERT OR IGNORE INTO proyecto_usuarios (proyecto_id, usuario_id) VALUES (?, ?)",
+    [projectId, user.id],
+  );
+  return { outcome: result.changes ? "CREATED" : "CONFLICT", user };
+});
+
 const removeMember = async (projectId, actorId, usuarioId) => {
-  return withTransaction(async () => {
+  return db.withTransaction(async () => {
     const project = await findById(projectId);
     if (!project) return { outcome: "NOT_FOUND" };
     if (project.creador_id !== actorId) return { outcome: "FORBIDDEN" };
@@ -112,7 +117,7 @@ const removeMember = async (projectId, actorId, usuarioId) => {
   });
 };
 
-const update = async (id, creadorId, { nombre, descripcion }) => withTransaction(async () => {
+const update = async (id, creadorId, { nombre, descripcion }) => db.withTransaction(async () => {
   const project = await findById(id);
   if (!project) return { outcome: "NOT_FOUND" };
   if (project.creador_id !== creadorId) return { outcome: "FORBIDDEN" };
@@ -128,7 +133,7 @@ const update = async (id, creadorId, { nombre, descripcion }) => withTransaction
 });
 
 const remove = async (id, creadorId) => {
-  return withTransaction(async () => {
+  return db.withTransaction(async () => {
     const project = await findById(id);
     if (!project) return { outcome: "NOT_FOUND" };
     if (project.creador_id !== creadorId) return { outcome: "FORBIDDEN" };
@@ -148,6 +153,7 @@ module.exports = {
   findById,
   findMembersByProjectId,
   addMember,
+  addMemberByEmail,
   removeMember,
   update,
   remove,

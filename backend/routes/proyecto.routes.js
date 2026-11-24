@@ -8,6 +8,7 @@ const {
   deleteProject,
   getProjectMembers,
   addProjectMember,
+  addProjectMemberByEmail,
   removeProjectMember,
 } = require("../controller/proyecto.controller");
 
@@ -18,6 +19,7 @@ router.post("/", createProject);
 router.get("/", getProjects);
 router.get("/:id/miembros", getProjectMembers);
 router.post("/:id/miembros", addProjectMember);
+router.post("/:id/miembros/por-correo", addProjectMemberByEmail);
 router.delete("/:id/miembros/:usuarioId", removeProjectMember);
 router.get("/:id", getProjectById);
 router.put("/:id", updateProject);
